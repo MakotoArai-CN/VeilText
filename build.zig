@@ -119,6 +119,22 @@ pub fn build(b: *std.Build) void {
     wasm_step.dependOn(&wasm_install.step);
     dist_step.dependOn(&wasm_install.step);
 
+    // Ship the JS bindings, type defs, and demo page next to the .wasm.
+    const wasm_assets = [_][]const u8{
+        "veiltext.js",
+        "veiltext.d.ts",
+        "index.html",
+        "node-example.mjs",
+    };
+    inline for (wasm_assets) |asset| {
+        const install_asset = b.addInstallFile(
+            b.path("web/" ++ asset),
+            "bin/Wasm/" ++ asset,
+        );
+        wasm_step.dependOn(&install_asset.step);
+        dist_step.dependOn(&install_asset.step);
+    }
+
     for (cross_targets) |ct| {
         const ct_target = b.resolveTargetQuery(.{
             .cpu_arch = ct.cpu_arch,

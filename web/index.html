@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VeilText WASM Playground</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:system-ui,sans-serif;max-width:880px;margin:32px auto;padding:0 16px;color:#1a2730;background:#f4faf8}
+  h1{margin:0 0 4px;font-size:22px}
+  p.tag{margin:0 0 24px;color:#688;font-size:13px}
+  fieldset{border:1px solid #c4dfd9;border-radius:10px;padding:14px 16px;margin-bottom:16px;background:#fff}
+  legend{font-weight:700;color:#148f88;padding:0 6px}
+  label{display:block;font-size:12px;color:#566;margin:8px 0 4px;font-weight:600}
+  textarea,select,input{width:100%;font:inherit;padding:8px 10px;border:1px solid #b9ece6;border-radius:8px;background:#fff;color:inherit}
+  textarea{min-height:90px;font-family:'JetBrains Mono',Consolas,monospace;font-size:13px;line-height:1.5;resize:vertical}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .row > *{flex:1;min-width:160px}
+  button{padding:9px 18px;background:#148f88;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-size:13px}
+  button.alt{background:#36c1b7}
+  button:hover{filter:brightness(1.07)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  output{display:block;padding:12px;background:#0e2528;color:#d8fffb;border-radius:8px;font-family:'JetBrains Mono',Consolas,monospace;font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-all;min-height:60px}
+  .err{color:#ff8b8b}
+  .status{font-size:12px;color:#688;margin-top:6px}
+  code{background:#e8f5f2;padding:1px 6px;border-radius:4px;font-size:12px}
+</style>
+</head>
+<body>
+<h1>VeilText WASM Playground</h1>
+<p class="tag">Demo of <code>web/veiltext.js</code> bindings to <code>veiltext-core.wasm</code>. All transforms run locally in your browser — no network calls.</p>
+
+<fieldset>
+  <legend>Status</legend>
+  <div id="status">Loading wasm…</div>
+</fieldset>
+
+<fieldset>
+  <legend>Encode / Decode</legend>
+  <div class="row">
+    <div>
+      <label>Algorithm</label>
+      <select id="algo"></select>
+    </div>
+    <div>
+      <label>Operation</label>
+      <select id="op">
+        <option value="encode">encode</option>
+        <option value="decode">decode</option>
+      </select>
+    </div>
+  </div>
+
+  <label>Input</label>
+  <textarea id="input">Hello, VeilText!</textarea>
+
+  <div class="row" style="margin-top:10px">
+    <button id="run">Run</button>
+    <button id="roundtrip" class="alt" type="button">Encode → Decode roundtrip</button>
+  </div>
+
+  <label style="margin-top:12px">Output</label>
+  <output id="output"></output>
+  <div class="status" id="meta"></div>
+</fieldset>
+
+<fieldset>
+  <legend>Hash</legend>
+  <div class="row">
+    <div>
+      <label>Algorithm</label>
+      <select id="halgo">
+        <option>sha256</option>
+        <option>sha512</option>
+        <option>blake3</option>
+        <option>md5</option>
+      </select>
+    </div>
+    <div>
+      <button id="hashBtn">Hash</button>
+    </div>
+  </div>
+  <label>Input</label>
+  <textarea id="hinput">abc</textarea>
+  <label>Digest</label>
+  <output id="houtput"></output>
+</fieldset>
+
+<script type="module">
+  import { load, ALGOS } from './veiltext.js';
+
+  const $ = (id) => document.getElementById(id);
+
+  // Populate algorithm select with non-hash algos.
+  const algoSel = $('algo');
+  for (const [name, meta] of Object.entries(ALGOS)) {
+    if (meta.kind === 'hash') continue;
+    const opt = document.createElement('option');
+    opt.value = name; opt.textContent = name;
+    algoSel.appendChild(opt);
+  }
+  algoSel.value = 'base64';
+
+  let vt = null;
+  try {
+    vt = await load('./veiltext-core.wasm');
+    $('status').textContent = `Ready · ABI v1 · ${Object.keys(ALGOS).length} algorithms loaded`;
+  } catch (e) {
+    $('status').innerHTML = '<span class="err">Failed to load wasm: ' + (e.message || e) + '</span>';
+    throw e;
+  }
+
+  function show(out, text, isErr = false) {
+    out.textContent = text;
+    out.className = isErr ? 'err' : '';
+  }
+
+  $('run').onclick = () => {
+    const algo = $('algo').value;
+    const op = $('op').value;
+    const input = $('input').value;
+    const t0 = performance.now();
+    try {
+      const result = vt[op](algo, input);
+      const dt = (performance.now() - t0).toFixed(2);
+      show($('output'), result);
+      $('meta').textContent = `${op} ${algo} · ${input.length} → ${result.length} bytes · ${dt} ms`;
+    } catch (e) {
+      show($('output'), e.message || String(e), true);
+      $('meta').textContent = '';
+    }
+  };
+
+  $('roundtrip').onclick = () => {
+    const algo = $('algo').value;
+    const input = $('input').value;
+    try {
+      const enc = vt.encode(algo, input);
+      const dec = vt.decode(algo, enc);
+      const ok = dec === input;
+      show($('output'),
+        `Encoded (${enc.length}B):\n${enc}\n\nDecoded (${dec.length}B):\n${dec}\n\nMatch: ${ok ? '✓' : '✗ MISMATCH'}`,
+        !ok);
+      $('meta').textContent = '';
+    } catch (e) {
+      show($('output'), e.message || String(e), true);
+    }
+  };
+
+  $('hashBtn').onclick = () => {
+    try {
+      const algo = $('halgo').value;
+      const digest = vt.hash(algo, $('hinput').value);
+      show($('houtput'), digest);
+    } catch (e) {
+      show($('houtput'), e.message || String(e), true);
+    }
+  };
+
+  // Auto-run once so the page shows something.
+  $('run').click();
+</script>
+</body>
+</html>

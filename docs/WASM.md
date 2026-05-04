@@ -11,12 +11,78 @@ zig build wasm --release=small
 Output:
 
 ```text
-zig-out/bin/Wasm/veiltext-core.wasm
+zig-out/bin/Wasm/
+├── veiltext-core.wasm    ← compute core
+├── veiltext.js           ← high-level ES-module bindings
+├── veiltext.d.ts         ← TypeScript types
+├── index.html            ← live playground (open it in a browser)
+└── node-example.mjs      ← Node 18+ / Deno / Bun example
 ```
 
-`zig build dist --release=fast` and `zig build dist --release=small` also include the wasm module.
+`zig build dist --release=fast` and `zig build dist --release=small` also include the wasm bundle.
 
-## Exports
+## Quick Start (high-level — recommended)
+
+The shipped `veiltext.js` wraps the raw ABI behind a small ergonomic class.
+Zero dependencies, ~5 KB, works in browsers, Node 18+, Deno, and Bun.
+
+### Browser
+
+```html
+<script type="module">
+  import { load } from './veiltext.js';
+  const vt = await load('./veiltext-core.wasm');
+
+  vt.encode('base64', 'Hello');           // 'SGVsbG8='
+  vt.decode('base64', 'SGVsbG8=');        // 'Hello'
+  vt.hash('sha256', 'abc');               // 'ba7816bf...'
+  vt.encode('bf_emoji', 'Hi');            // emoji-Brainfuck
+</script>
+```
+
+Or just open `zig-out/bin/Wasm/index.html` in a browser — it's a complete playground.
+
+### Node.js / Deno / Bun
+
+```js
+import { load } from './veiltext.js';
+const vt = await load('./veiltext-core.wasm');
+console.log(vt.encode('base64', 'Hello'));
+```
+
+Run the bundled example:
+
+```bash
+node web/node-example.mjs                     # uses zig-out/bin/Wasm/...wasm
+node web/node-example.mjs path/to/core.wasm   # explicit path
+bun  web/node-example.mjs                     # also works
+```
+
+### High-level API surface
+
+```ts
+class VeilText {
+  encode(algo: AlgoName, input: string | Uint8Array): string;
+  decode(algo: AlgoName, input: string | Uint8Array): string;
+  decodeBytes(algo: AlgoName, input: string | Uint8Array): Uint8Array;
+  hash(algo: 'sha256' | 'sha512' | 'blake3' | 'md5',
+       input: string | Uint8Array): string;
+  supportedAlgorithms(): string;
+}
+
+// AlgoName: 'base16' | 'base32' | 'base58' | 'base64' | 'base85'
+//         | 'sha256' | 'sha512' | 'blake3' | 'md5'
+//         | 'js_hex_escape' | 'js_unicode_escape' | 'js_binary_string'
+//         | 'js_jjencode' | 'js_aaencode' | 'js_jsfuck'
+//         | 'js_eval_wrap' | 'js_constructor_wrap' | 'js_base36_tostring'
+//         | 'bf_text' | 'bf_emoji'
+```
+
+Errors throw `VeilTextError` with a numeric `.code` matching the table below.
+
+## Low-level ABI
+
+If you don't want to use the JS bindings, here's the raw export surface.
 
 ```text
 veiltext_wasm_abi_version() -> u32
@@ -89,7 +155,9 @@ AES/ChaCha/OpenSSL CBC are intentionally not exported in the current wasm ABI be
 | `4` | transform failed |
 | `5` | out of memory |
 
-## Node.js Example
+## Manual ABI Example (no bindings)
+
+For environments where you don't want the JS wrapper:
 
 ```js
 const fs = require("fs");
