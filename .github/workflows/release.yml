@@ -1,0 +1,277 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'build.zig'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  get-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+      tag_exists: ${{ steps.check_tag.outputs.exists }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version from config.zig
+        id: get_version
+        run: |
+          VERSION=$(grep -oP 'app_version = "\K[0-9]+\.[0-9]+\.[0-9]+' src/config.zig | head -1)
+          echo "version=v${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Check if tag exists
+        id: check_tag
+        run: |
+          if git rev-parse "${{ steps.get_version.outputs.version }}" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+  # ── Build: Linux + FreeBSD ─────────────────────────────────────
+  build-linux:
+    needs: get-version
+    if: needs.get-version.outputs.tag_exists == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Build all Linux & FreeBSD targets
+        run: zig build dist -Doptimize=ReleaseFast -j2
+
+      - name: Package Linux binaries
+        run: |
+          mkdir -p release
+          for f in zig-out/bin/Linux/veiltext-*; do
+            [ -f "$f" ] || continue
+            name=$(basename "$f")
+            chmod +x "$f"
+            tar czf "release/linux-${name}.tar.gz" -C zig-out/bin/Linux "$name"
+          done
+
+      - name: Package FreeBSD binaries
+        run: |
+          for f in zig-out/bin/FreeBSD/veiltext-*; do
+            [ -f "$f" ] || continue
+            name=$(basename "$f")
+            chmod +x "$f"
+            tar czf "release/freebsd-${name}.tar.gz" -C zig-out/bin/FreeBSD "$name"
+          done
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-freebsd
+          path: release/*.tar.gz
+
+  # ── Build: Windows ─────────────────────────────────────────────
+  build-windows:
+    needs: get-version
+    if: needs.get-version.outputs.tag_exists == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Build all Windows targets
+        run: zig build dist -Doptimize=ReleaseFast -j2
+
+      - name: Package Windows binaries
+        run: |
+          mkdir -p release
+          for f in zig-out/bin/Windows/veiltext-*.exe; do
+            [ -f "$f" ] || continue
+            name=$(basename "$f" .exe)
+            zip -j "release/windows-${name}.zip" "$f"
+          done
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: release/*.zip
+
+  # ── Build: macOS ───────────────────────────────────────────────
+  build-macos:
+    needs: get-version
+    if: needs.get-version.outputs.tag_exists == 'false'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Build all macOS targets
+        run: zig build dist -Doptimize=ReleaseFast -j2
+
+      - name: Package macOS binaries
+        run: |
+          mkdir -p release
+          for f in zig-out/bin/MacOS/veiltext-*; do
+            [ -f "$f" ] || continue
+            name=$(basename "$f")
+            chmod +x "$f"
+            tar czf "release/macos-${name}.tar.gz" -C zig-out/bin/MacOS "$name"
+          done
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: release/*.tar.gz
+
+  # ── Create GitHub Release ──────────────────────────────────────
+  release:
+    needs: [get-version, build-linux, build-windows, build-macos]
+    if: always() && needs.get-version.outputs.tag_exists == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+        continue-on-error: true
+
+      - name: List artifacts
+        run: find artifacts -type f 2>/dev/null || echo "No artifacts found"
+
+      - name: Flatten artifacts
+        run: |
+          mkdir -p release-files
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' \) -exec cp {} release-files/ \;
+          ls -la release-files/
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$PREV_TAG" ]; then
+            COMMITS=$(git log --oneline --pretty=format:"- %s (%h)" | head -50)
+          else
+            COMMITS=$(git log ${PREV_TAG}..HEAD --oneline --pretty=format:"- %s (%h)")
+          fi
+
+          COMMITS=$(echo "$COMMITS" | sed 's/@\([a-zA-Z0-9_-]*\)/`@\1`/g')
+
+          VERSION="${{ needs.get-version.outputs.version }}"
+          REPO="${{ github.repository }}"
+          BASE_URL="https://github.com/${REPO}/releases/download/${VERSION}"
+
+          {
+            echo "CHANGELOG<<EOF"
+            echo "## VeilText ${VERSION}"
+            echo ""
+            echo "Self-hosted text encryption toolkit — single binary, zero dependencies."
+            echo ""
+            echo "### Changes"
+            echo ""
+            echo "$COMMITS"
+            echo ""
+            echo "---"
+            echo ""
+            echo "### Downloads"
+            echo ""
+            echo "#### Linux (glibc)"
+            echo ""
+            echo "| Architecture | Download |"
+            echo "|:-------------|:---------|"
+            echo "| x86_64 | [\`veiltext-x86_64\`](${BASE_URL}/linux-veiltext-x86_64.tar.gz) |"
+            echo "| aarch64 | [\`veiltext-aarch64\`](${BASE_URL}/linux-veiltext-aarch64.tar.gz) |"
+            echo "| x86 | [\`veiltext-x86\`](${BASE_URL}/linux-veiltext-x86.tar.gz) |"
+            echo "| arm | [\`veiltext-arm\`](${BASE_URL}/linux-veiltext-arm.tar.gz) |"
+            echo "| riscv64 | [\`veiltext-riscv64\`](${BASE_URL}/linux-veiltext-riscv64.tar.gz) |"
+            echo "| mips | [\`veiltext-mips\`](${BASE_URL}/linux-veiltext-mips.tar.gz) |"
+            echo "| mips64 | [\`veiltext-mips64\`](${BASE_URL}/linux-veiltext-mips64.tar.gz) |"
+            echo "| powerpc | [\`veiltext-powerpc\`](${BASE_URL}/linux-veiltext-powerpc.tar.gz) |"
+            echo "| powerpc64 | [\`veiltext-powerpc64\`](${BASE_URL}/linux-veiltext-powerpc64.tar.gz) |"
+            echo "| powerpc64le | [\`veiltext-powerpc64le\`](${BASE_URL}/linux-veiltext-powerpc64le.tar.gz) |"
+            echo "| s390x | [\`veiltext-s390x\`](${BASE_URL}/linux-veiltext-s390x.tar.gz) |"
+            echo "| loongarch64 | [\`veiltext-loongarch64\`](${BASE_URL}/linux-veiltext-loongarch64.tar.gz) |"
+            echo "| sparc64 | [\`veiltext-sparc64\`](${BASE_URL}/linux-veiltext-sparc64.tar.gz) |"
+            echo ""
+            echo "#### Linux (musl / static — Alpine, Docker)"
+            echo ""
+            echo "| Architecture | Download |"
+            echo "|:-------------|:---------|"
+            echo "| x86_64 | [\`veiltext-x86_64-musl\`](${BASE_URL}/linux-veiltext-x86_64-musl.tar.gz) |"
+            echo "| aarch64 | [\`veiltext-aarch64-musl\`](${BASE_URL}/linux-veiltext-aarch64-musl.tar.gz) |"
+            echo "| x86 | [\`veiltext-x86-musl\`](${BASE_URL}/linux-veiltext-x86-musl.tar.gz) |"
+            echo "| arm | [\`veiltext-arm-musl\`](${BASE_URL}/linux-veiltext-arm-musl.tar.gz) |"
+            echo "| riscv64 | [\`veiltext-riscv64-musl\`](${BASE_URL}/linux-veiltext-riscv64-musl.tar.gz) |"
+            echo "| mips | [\`veiltext-mips-musl\`](${BASE_URL}/linux-veiltext-mips-musl.tar.gz) |"
+            echo "| mips64 | [\`veiltext-mips64-musl\`](${BASE_URL}/linux-veiltext-mips64-musl.tar.gz) |"
+            echo "| powerpc | [\`veiltext-powerpc-musl\`](${BASE_URL}/linux-veiltext-powerpc-musl.tar.gz) |"
+            echo "| powerpc64 | [\`veiltext-powerpc64-musl\`](${BASE_URL}/linux-veiltext-powerpc64-musl.tar.gz) |"
+            echo "| powerpc64le | [\`veiltext-powerpc64le-musl\`](${BASE_URL}/linux-veiltext-powerpc64le-musl.tar.gz) |"
+            echo "| s390x | [\`veiltext-s390x-musl\`](${BASE_URL}/linux-veiltext-s390x-musl.tar.gz) |"
+            echo "| loongarch64 | [\`veiltext-loongarch64-musl\`](${BASE_URL}/linux-veiltext-loongarch64-musl.tar.gz) |"
+            echo ""
+            echo "#### Windows"
+            echo ""
+            echo "| Architecture | Download |"
+            echo "|:-------------|:---------|"
+            echo "| x86_64 | [\`veiltext-x86_64.exe\`](${BASE_URL}/windows-veiltext-x86_64.zip) |"
+            echo "| aarch64 | [\`veiltext-aarch64.exe\`](${BASE_URL}/windows-veiltext-aarch64.zip) |"
+            echo "| x86 | [\`veiltext-x86.exe\`](${BASE_URL}/windows-veiltext-x86.zip) |"
+            echo ""
+            echo "#### macOS"
+            echo ""
+            echo "| Architecture | Download |"
+            echo "|:-------------|:---------|"
+            echo "| x86_64 (Intel) | [\`veiltext-x86_64\`](${BASE_URL}/macos-veiltext-x86_64.tar.gz) |"
+            echo "| aarch64 (Apple Silicon) | [\`veiltext-aarch64\`](${BASE_URL}/macos-veiltext-aarch64.tar.gz) |"
+            echo ""
+            echo "#### FreeBSD"
+            echo ""
+            echo "| Architecture | Download |"
+            echo "|:-------------|:---------|"
+            echo "| x86_64 | [\`veiltext-x86_64\`](${BASE_URL}/freebsd-veiltext-x86_64.tar.gz) |"
+            echo "| aarch64 | [\`veiltext-aarch64\`](${BASE_URL}/freebsd-veiltext-aarch64.tar.gz) |"
+            echo "| x86 | [\`veiltext-x86\`](${BASE_URL}/freebsd-veiltext-x86.tar.gz) |"
+            echo "| arm | [\`veiltext-arm\`](${BASE_URL}/freebsd-veiltext-arm.tar.gz) |"
+            echo "| powerpc | [\`veiltext-powerpc\`](${BASE_URL}/freebsd-veiltext-powerpc.tar.gz) |"
+            echo "| powerpc64 | [\`veiltext-powerpc64\`](${BASE_URL}/freebsd-veiltext-powerpc64.tar.gz) |"
+            echo "| powerpc64le | [\`veiltext-powerpc64le\`](${BASE_URL}/freebsd-veiltext-powerpc64le.tar.gz) |"
+            echo "| riscv64 | [\`veiltext-riscv64\`](${BASE_URL}/freebsd-veiltext-riscv64.tar.gz) |"
+            echo ""
+            echo "---"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.get-version.outputs.version }}
+          name: VeilText ${{ needs.get-version.outputs.version }}
+          body: ${{ steps.changelog.outputs.CHANGELOG }}
+          draft: false
+          prerelease: false
+          files: release-files/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
