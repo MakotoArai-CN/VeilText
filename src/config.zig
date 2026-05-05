@@ -8,7 +8,7 @@ const std = @import("std");
 pub const app_name = "VeilText";
 
 /// Application version.
-pub const app_version = "0.1.0";
+pub const app_version = "0.1.1";
 
 /// Default HTTP listen port.
 pub const default_port: u16 = 7478;
