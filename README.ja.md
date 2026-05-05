@@ -132,4 +132,4 @@ src/
 
 ## ライセンス
 
-MIT
+GNU Affero General Public License v3.0 (AGPL-3.0)。詳細は [LICENSE](LICENSE) を参照してください。
