@@ -60,30 +60,29 @@ jobs:
       - name: Build all Linux & FreeBSD targets
         run: zig build dist -Doptimize=ReleaseFast -j2
 
-      - name: Package Linux binaries
+      - name: Prepare Linux binaries for release
         run: |
           mkdir -p release
           for f in zig-out/bin/Linux/veiltext-*; do
             [ -f "$f" ] || continue
             name=$(basename "$f")
-            chmod +x "$f"
-            tar czf "release/linux-${name}.tar.gz" -C zig-out/bin/Linux "$name"
+            cp "$f" "release/linux-${name}"
           done
 
-      - name: Package FreeBSD binaries
+      - name: Prepare FreeBSD binaries for release
         run: |
           for f in zig-out/bin/FreeBSD/veiltext-*; do
             [ -f "$f" ] || continue
             name=$(basename "$f")
-            chmod +x "$f"
-            tar czf "release/freebsd-${name}.tar.gz" -C zig-out/bin/FreeBSD "$name"
+            cp "$f" "release/freebsd-${name}"
           done
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: linux-freebsd
-          path: release/*.tar.gz
+          path: release/*
+          compression-level: 0
 
   # ── Build: Windows ─────────────────────────────────────────────
   build-windows:
@@ -101,20 +100,21 @@ jobs:
       - name: Build all Windows targets
         run: zig build dist -Doptimize=ReleaseFast -j2
 
-      - name: Package Windows binaries
+      - name: Prepare Windows binaries for release
         run: |
           mkdir -p release
           for f in zig-out/bin/Windows/veiltext-*.exe; do
             [ -f "$f" ] || continue
-            name=$(basename "$f" .exe)
-            zip -j "release/windows-${name}.zip" "$f"
+            name=$(basename "$f")
+            cp "$f" "release/windows-${name}"
           done
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: release/*.zip
+          path: release/*
+          compression-level: 0
 
   # ── Build: macOS ───────────────────────────────────────────────
   build-macos:
@@ -132,21 +132,21 @@ jobs:
       - name: Build all macOS targets
         run: zig build dist -Doptimize=ReleaseFast -j2
 
-      - name: Package macOS binaries
+      - name: Prepare macOS binaries for release
         run: |
           mkdir -p release
           for f in zig-out/bin/MacOS/veiltext-*; do
             [ -f "$f" ] || continue
             name=$(basename "$f")
-            chmod +x "$f"
-            tar czf "release/macos-${name}.tar.gz" -C zig-out/bin/MacOS "$name"
+            cp "$f" "release/macos-${name}"
           done
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: macos
-          path: release/*.tar.gz
+          path: release/*
+          compression-level: 0
 
   # ── Create GitHub Release ──────────────────────────────────────
   release:
@@ -170,7 +170,7 @@ jobs:
       - name: Flatten artifacts
         run: |
           mkdir -p release-files
-          find artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' \) -exec cp {} release-files/ \;
+          find artifacts -type f -exec cp {} release-files/ \;
           ls -la release-files/
 
       - name: Generate changelog
@@ -203,68 +203,71 @@ jobs:
             echo ""
             echo "### Downloads"
             echo ""
+            echo "Raw binaries are uploaded without tar/zip packaging."
+            echo "On Linux, macOS, and FreeBSD, you may need to run \`chmod +x <file>\` after downloading."
+            echo ""
             echo "#### Linux (glibc)"
             echo ""
             echo "| Architecture | Download |"
             echo "|:-------------|:---------|"
-            echo "| x86_64 | [\`veiltext-x86_64\`](${BASE_URL}/linux-veiltext-x86_64.tar.gz) |"
-            echo "| aarch64 | [\`veiltext-aarch64\`](${BASE_URL}/linux-veiltext-aarch64.tar.gz) |"
-            echo "| x86 | [\`veiltext-x86\`](${BASE_URL}/linux-veiltext-x86.tar.gz) |"
-            echo "| arm | [\`veiltext-arm\`](${BASE_URL}/linux-veiltext-arm.tar.gz) |"
-            echo "| riscv64 | [\`veiltext-riscv64\`](${BASE_URL}/linux-veiltext-riscv64.tar.gz) |"
-            echo "| mips | [\`veiltext-mips\`](${BASE_URL}/linux-veiltext-mips.tar.gz) |"
-            echo "| mips64 | [\`veiltext-mips64\`](${BASE_URL}/linux-veiltext-mips64.tar.gz) |"
-            echo "| powerpc | [\`veiltext-powerpc\`](${BASE_URL}/linux-veiltext-powerpc.tar.gz) |"
-            echo "| powerpc64 | [\`veiltext-powerpc64\`](${BASE_URL}/linux-veiltext-powerpc64.tar.gz) |"
-            echo "| powerpc64le | [\`veiltext-powerpc64le\`](${BASE_URL}/linux-veiltext-powerpc64le.tar.gz) |"
-            echo "| s390x | [\`veiltext-s390x\`](${BASE_URL}/linux-veiltext-s390x.tar.gz) |"
-            echo "| loongarch64 | [\`veiltext-loongarch64\`](${BASE_URL}/linux-veiltext-loongarch64.tar.gz) |"
-            echo "| sparc64 | [\`veiltext-sparc64\`](${BASE_URL}/linux-veiltext-sparc64.tar.gz) |"
+            echo "| x86_64 | [\`linux-veiltext-x86_64\`](${BASE_URL}/linux-veiltext-x86_64) |"
+            echo "| aarch64 | [\`linux-veiltext-aarch64\`](${BASE_URL}/linux-veiltext-aarch64) |"
+            echo "| x86 | [\`linux-veiltext-x86\`](${BASE_URL}/linux-veiltext-x86) |"
+            echo "| arm | [\`linux-veiltext-arm\`](${BASE_URL}/linux-veiltext-arm) |"
+            echo "| riscv64 | [\`linux-veiltext-riscv64\`](${BASE_URL}/linux-veiltext-riscv64) |"
+            echo "| mips | [\`linux-veiltext-mips\`](${BASE_URL}/linux-veiltext-mips) |"
+            echo "| mips64 | [\`linux-veiltext-mips64\`](${BASE_URL}/linux-veiltext-mips64) |"
+            echo "| powerpc | [\`linux-veiltext-powerpc\`](${BASE_URL}/linux-veiltext-powerpc) |"
+            echo "| powerpc64 | [\`linux-veiltext-powerpc64\`](${BASE_URL}/linux-veiltext-powerpc64) |"
+            echo "| powerpc64le | [\`linux-veiltext-powerpc64le\`](${BASE_URL}/linux-veiltext-powerpc64le) |"
+            echo "| s390x | [\`linux-veiltext-s390x\`](${BASE_URL}/linux-veiltext-s390x) |"
+            echo "| loongarch64 | [\`linux-veiltext-loongarch64\`](${BASE_URL}/linux-veiltext-loongarch64) |"
+            echo "| sparc64 | [\`linux-veiltext-sparc64\`](${BASE_URL}/linux-veiltext-sparc64) |"
             echo ""
             echo "#### Linux (musl / static — Alpine, Docker)"
             echo ""
             echo "| Architecture | Download |"
             echo "|:-------------|:---------|"
-            echo "| x86_64 | [\`veiltext-x86_64-musl\`](${BASE_URL}/linux-veiltext-x86_64-musl.tar.gz) |"
-            echo "| aarch64 | [\`veiltext-aarch64-musl\`](${BASE_URL}/linux-veiltext-aarch64-musl.tar.gz) |"
-            echo "| x86 | [\`veiltext-x86-musl\`](${BASE_URL}/linux-veiltext-x86-musl.tar.gz) |"
-            echo "| arm | [\`veiltext-arm-musl\`](${BASE_URL}/linux-veiltext-arm-musl.tar.gz) |"
-            echo "| riscv64 | [\`veiltext-riscv64-musl\`](${BASE_URL}/linux-veiltext-riscv64-musl.tar.gz) |"
-            echo "| mips | [\`veiltext-mips-musl\`](${BASE_URL}/linux-veiltext-mips-musl.tar.gz) |"
-            echo "| mips64 | [\`veiltext-mips64-musl\`](${BASE_URL}/linux-veiltext-mips64-musl.tar.gz) |"
-            echo "| powerpc | [\`veiltext-powerpc-musl\`](${BASE_URL}/linux-veiltext-powerpc-musl.tar.gz) |"
-            echo "| powerpc64 | [\`veiltext-powerpc64-musl\`](${BASE_URL}/linux-veiltext-powerpc64-musl.tar.gz) |"
-            echo "| powerpc64le | [\`veiltext-powerpc64le-musl\`](${BASE_URL}/linux-veiltext-powerpc64le-musl.tar.gz) |"
-            echo "| s390x | [\`veiltext-s390x-musl\`](${BASE_URL}/linux-veiltext-s390x-musl.tar.gz) |"
-            echo "| loongarch64 | [\`veiltext-loongarch64-musl\`](${BASE_URL}/linux-veiltext-loongarch64-musl.tar.gz) |"
+            echo "| x86_64 | [\`linux-veiltext-x86_64-musl\`](${BASE_URL}/linux-veiltext-x86_64-musl) |"
+            echo "| aarch64 | [\`linux-veiltext-aarch64-musl\`](${BASE_URL}/linux-veiltext-aarch64-musl) |"
+            echo "| x86 | [\`linux-veiltext-x86-musl\`](${BASE_URL}/linux-veiltext-x86-musl) |"
+            echo "| arm | [\`linux-veiltext-arm-musl\`](${BASE_URL}/linux-veiltext-arm-musl) |"
+            echo "| riscv64 | [\`linux-veiltext-riscv64-musl\`](${BASE_URL}/linux-veiltext-riscv64-musl) |"
+            echo "| mips | [\`linux-veiltext-mips-musl\`](${BASE_URL}/linux-veiltext-mips-musl) |"
+            echo "| mips64 | [\`linux-veiltext-mips64-musl\`](${BASE_URL}/linux-veiltext-mips64-musl) |"
+            echo "| powerpc | [\`linux-veiltext-powerpc-musl\`](${BASE_URL}/linux-veiltext-powerpc-musl) |"
+            echo "| powerpc64 | [\`linux-veiltext-powerpc64-musl\`](${BASE_URL}/linux-veiltext-powerpc64-musl) |"
+            echo "| powerpc64le | [\`linux-veiltext-powerpc64le-musl\`](${BASE_URL}/linux-veiltext-powerpc64le-musl) |"
+            echo "| s390x | [\`linux-veiltext-s390x-musl\`](${BASE_URL}/linux-veiltext-s390x-musl) |"
+            echo "| loongarch64 | [\`linux-veiltext-loongarch64-musl\`](${BASE_URL}/linux-veiltext-loongarch64-musl) |"
             echo ""
             echo "#### Windows"
             echo ""
             echo "| Architecture | Download |"
             echo "|:-------------|:---------|"
-            echo "| x86_64 | [\`veiltext-x86_64.exe\`](${BASE_URL}/windows-veiltext-x86_64.zip) |"
-            echo "| aarch64 | [\`veiltext-aarch64.exe\`](${BASE_URL}/windows-veiltext-aarch64.zip) |"
-            echo "| x86 | [\`veiltext-x86.exe\`](${BASE_URL}/windows-veiltext-x86.zip) |"
+            echo "| x86_64 | [\`windows-veiltext-x86_64.exe\`](${BASE_URL}/windows-veiltext-x86_64.exe) |"
+            echo "| aarch64 | [\`windows-veiltext-aarch64.exe\`](${BASE_URL}/windows-veiltext-aarch64.exe) |"
+            echo "| x86 | [\`windows-veiltext-x86.exe\`](${BASE_URL}/windows-veiltext-x86.exe) |"
             echo ""
             echo "#### macOS"
             echo ""
             echo "| Architecture | Download |"
             echo "|:-------------|:---------|"
-            echo "| x86_64 (Intel) | [\`veiltext-x86_64\`](${BASE_URL}/macos-veiltext-x86_64.tar.gz) |"
-            echo "| aarch64 (Apple Silicon) | [\`veiltext-aarch64\`](${BASE_URL}/macos-veiltext-aarch64.tar.gz) |"
+            echo "| x86_64 (Intel) | [\`macos-veiltext-x86_64\`](${BASE_URL}/macos-veiltext-x86_64) |"
+            echo "| aarch64 (Apple Silicon) | [\`macos-veiltext-aarch64\`](${BASE_URL}/macos-veiltext-aarch64) |"
             echo ""
             echo "#### FreeBSD"
             echo ""
             echo "| Architecture | Download |"
             echo "|:-------------|:---------|"
-            echo "| x86_64 | [\`veiltext-x86_64\`](${BASE_URL}/freebsd-veiltext-x86_64.tar.gz) |"
-            echo "| aarch64 | [\`veiltext-aarch64\`](${BASE_URL}/freebsd-veiltext-aarch64.tar.gz) |"
-            echo "| x86 | [\`veiltext-x86\`](${BASE_URL}/freebsd-veiltext-x86.tar.gz) |"
-            echo "| arm | [\`veiltext-arm\`](${BASE_URL}/freebsd-veiltext-arm.tar.gz) |"
-            echo "| powerpc | [\`veiltext-powerpc\`](${BASE_URL}/freebsd-veiltext-powerpc.tar.gz) |"
-            echo "| powerpc64 | [\`veiltext-powerpc64\`](${BASE_URL}/freebsd-veiltext-powerpc64.tar.gz) |"
-            echo "| powerpc64le | [\`veiltext-powerpc64le\`](${BASE_URL}/freebsd-veiltext-powerpc64le.tar.gz) |"
-            echo "| riscv64 | [\`veiltext-riscv64\`](${BASE_URL}/freebsd-veiltext-riscv64.tar.gz) |"
+            echo "| x86_64 | [\`freebsd-veiltext-x86_64\`](${BASE_URL}/freebsd-veiltext-x86_64) |"
+            echo "| aarch64 | [\`freebsd-veiltext-aarch64\`](${BASE_URL}/freebsd-veiltext-aarch64) |"
+            echo "| x86 | [\`freebsd-veiltext-x86\`](${BASE_URL}/freebsd-veiltext-x86) |"
+            echo "| arm | [\`freebsd-veiltext-arm\`](${BASE_URL}/freebsd-veiltext-arm) |"
+            echo "| powerpc | [\`freebsd-veiltext-powerpc\`](${BASE_URL}/freebsd-veiltext-powerpc) |"
+            echo "| powerpc64 | [\`freebsd-veiltext-powerpc64\`](${BASE_URL}/freebsd-veiltext-powerpc64) |"
+            echo "| powerpc64le | [\`freebsd-veiltext-powerpc64le\`](${BASE_URL}/freebsd-veiltext-powerpc64le) |"
+            echo "| riscv64 | [\`freebsd-veiltext-riscv64\`](${BASE_URL}/freebsd-veiltext-riscv64) |"
             echo ""
             echo "---"
             echo "EOF"
