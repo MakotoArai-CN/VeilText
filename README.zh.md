@@ -216,6 +216,11 @@ src/
 - AI API key 通过命令行或设置页提供。不要把带 key 的启动命令写入公开脚本。
 - 哈希是单向步骤，不能用于解密管线恢复明文。
 
+## 鸣谢
+
+- [Ziglang](https://ziglang.org/)
+- [Linux.do](https://linux.do/)
+
 ## 许可证
 
 MIT

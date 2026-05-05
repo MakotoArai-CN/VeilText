@@ -125,6 +125,11 @@ src/
 - 履歴には操作メタデータと暗号文プレビューが保存されます。
 - ハッシュは一方向であり、復号できません。
 
+## 謝辞
+
+- [Ziglang](https://ziglang.org/)
+- [Linux.do](https://linux.do/)
+
 ## ライセンス
 
 MIT

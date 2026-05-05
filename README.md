@@ -169,6 +169,11 @@ src/
 - History stores operation metadata and ciphertext previews. Clear history when handling sensitive material.
 - Hash steps are one-way and cannot be decrypted.
 
+## Thanks
+
+- [Ziglang](https://ziglang.org/)
+- [Linux.do](https://linux.do/)
+
 ## License
 
 MIT
