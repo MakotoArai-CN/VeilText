@@ -58,9 +58,9 @@ POST   /api/decode-smart
 POST   /api/puzzle/split
 POST   /api/puzzle/merge
 POST   /api/generate
-GET    /api/history
-DELETE /api/history
-DELETE /api/history/:id
+GET    /api/history       (admin audit token required)
+DELETE /api/history       (admin audit token required)
+DELETE /api/history/:id   (admin audit token required)
 GET    /api/settings
 PUT    /api/settings
 GET    /api/template-data

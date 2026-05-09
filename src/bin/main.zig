@@ -8,6 +8,9 @@ pub fn main(init: std.process.Init) !void {
     const allocator = init.gpa;
 
     var cfg = config.Runtime{};
+    if (init.environ_map.get("VEILTEXT_ADMIN_TOKEN")) |val| {
+        if (val.len > 0) cfg.admin_token = try allocator.dupe(u8, val);
+    }
 
     // Parse CLI arguments
     var args = try std.process.Args.Iterator.initAllocator(init.minimal.args, allocator);
@@ -34,6 +37,8 @@ pub fn main(init: std.process.Init) !void {
             if (args.next()) |val| cfg.claude_api_key = try allocator.dupe(u8, val);
         } else if (std.mem.eql(u8, arg, "-claude-endpoint") or std.mem.eql(u8, arg, "--claude-endpoint")) {
             if (args.next()) |val| cfg.claude_endpoint = try allocator.dupe(u8, val);
+        } else if (std.mem.eql(u8, arg, "-admin-token") or std.mem.eql(u8, arg, "--admin-token")) {
+            if (args.next()) |val| cfg.admin_token = try allocator.dupe(u8, val);
         } else if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
             printUsage();
             return;
@@ -63,6 +68,9 @@ pub fn main(init: std.process.Init) !void {
     if (cfg.claude_api_key.len > 0) {
         try output.printKeyValue(&w, "Claude", "configured", caps);
     }
+    if (cfg.admin_token.len > 0) {
+        try output.printKeyValue(&w, "Admin audit API", "token protected", caps);
+    }
     try w.writeByte('\n');
     try output.printSuccess(&w, "Server starting...", caps);
     try w.writeByte('\n');
@@ -87,6 +95,7 @@ fn printUsage() void {
         \\  -openai-endpoint <url>    OpenAI-compatible API endpoint
         \\  -claude-key <key>         Claude API key
         \\  -claude-endpoint <url>    Claude API endpoint
+        \\  -admin-token <token>      Admin token for audit APIs (or VEILTEXT_ADMIN_TOKEN)
         \\  -h, --help                Show this help
         \\  -v, --version             Show version
         \\

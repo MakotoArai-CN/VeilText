@@ -8,7 +8,7 @@ const std = @import("std");
 pub const app_name = "VeilText";
 
 /// Application version.
-pub const app_version = "0.1.1";
+pub const app_version = "0.1.2";
 
 /// Default HTTP listen port.
 pub const default_port: u16 = 7478;
@@ -146,6 +146,9 @@ pub const Runtime = struct {
     openai_api_key: []const u8 = "",
     claude_endpoint: []const u8 = default_claude_endpoint,
     claude_api_key: []const u8 = "",
+
+    // Admin-only audit API settings.
+    admin_token: []const u8 = "",
 
     pub fn maxBytes(self: Runtime) u64 {
         _ = self;

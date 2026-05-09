@@ -228,6 +228,11 @@ bf_emoji
 
 ## 历史记录
 
+这些审计接口仅限管理员访问。使用 `--admin-token <token>` 或
+`VEILTEXT_ADMIN_TOKEN` 配置管理员 token，然后在请求中传入
+`X-Admin-Token: <token>` 或 `Authorization: Bearer <token>`。
+普通 Web UI 的历史记录保存在浏览器 `localStorage` 中。
+
 ### GET `/api/history`
 
 响应：

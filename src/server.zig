@@ -293,6 +293,7 @@ fn handleApiRoute(alloc: std.mem.Allocator, state: *ServerState, request: *std.h
 // ═══════════════════════════════════════════════════════════════════
 
 fn handleEncrypt(alloc: std.mem.Allocator, state: *ServerState, request: *std.http.Server.Request) !void {
+    _ = state;
     const body = try readBody(alloc, request);
 
     const parsed = std.json.parseFromSlice(std.json.Value, alloc, body, .{}) catch {
@@ -342,15 +343,9 @@ fn handleEncrypt(alloc: std.mem.Allocator, state: *ServerState, request: *std.ht
         return;
     };
     defer alloc.free(result.ciphertext);
+    defer alloc.free(result.description);
 
     const plaintext_hash = crypto_hash.sha256String(plaintext);
-    state.hist.addRecord(.{
-        .operation = "encrypt",
-        .pipeline_desc = result.description,
-        .plaintext_hash = &plaintext_hash,
-        .ciphertext_preview = result.ciphertext[0..@min(result.ciphertext.len, 512)],
-    }) catch {};
-
     var resp_buf: std.Io.Writer.Allocating = .init(alloc);
     const w = &resp_buf.writer;
     try w.writeAll("{\"ok\":true,\"ciphertext\":");
@@ -367,6 +362,7 @@ fn handleEncrypt(alloc: std.mem.Allocator, state: *ServerState, request: *std.ht
 }
 
 fn handleDecrypt(alloc: std.mem.Allocator, state: *ServerState, request: *std.http.Server.Request) !void {
+    _ = state;
     const body = try readBody(alloc, request);
 
     const parsed = std.json.parseFromSlice(std.json.Value, alloc, body, .{}) catch {
@@ -411,6 +407,7 @@ fn handleDecrypt(alloc: std.mem.Allocator, state: *ServerState, request: *std.ht
         return;
     };
     defer alloc.free(result.ciphertext);
+    defer alloc.free(result.description);
 
     var verified = false;
     var has_expected_hash = false;
@@ -422,17 +419,12 @@ fn handleDecrypt(alloc: std.mem.Allocator, state: *ServerState, request: *std.ht
         }
     }
 
-    state.hist.addRecord(.{
-        .operation = "decrypt",
-        .pipeline_desc = result.description,
-        .plaintext_hash = "",
-        .ciphertext_preview = ciphertext[0..@min(ciphertext.len, 512)],
-    }) catch {};
-
     var resp_buf: std.Io.Writer.Allocating = .init(alloc);
     const w = &resp_buf.writer;
     try w.writeAll("{\"ok\":true,\"plaintext\":");
     try utils.writeJsonString(w, result.ciphertext);
+    try w.writeAll(",\"pipeline_desc\":");
+    try utils.writeJsonString(w, result.description);
     try w.writeAll(",\"verified\":");
     try w.writeAll(if (has_expected_hash and verified) "true" else if (has_expected_hash) "false" else "null");
     try w.writeAll(",\"hash_match\":");
@@ -445,6 +437,7 @@ fn handleDecrypt(alloc: std.mem.Allocator, state: *ServerState, request: *std.ht
 }
 
 fn handleSmartDecode(alloc: std.mem.Allocator, state: *ServerState, request: *std.http.Server.Request) !void {
+    _ = state;
     const body = try readBody(alloc, request);
 
     const parsed = std.json.parseFromSlice(std.json.Value, alloc, body, .{}) catch {
@@ -489,13 +482,6 @@ fn handleSmartDecode(alloc: std.mem.Allocator, state: *ServerState, request: *st
         return;
     };
     defer result.deinit(alloc);
-
-    state.hist.addRecord(.{
-        .operation = "decrypt",
-        .pipeline_desc = result.description,
-        .plaintext_hash = "",
-        .ciphertext_preview = ciphertext[0..@min(ciphertext.len, 512)],
-    }) catch {};
 
     var resp_buf: std.Io.Writer.Allocating = .init(alloc);
     const w = &resp_buf.writer;
@@ -644,10 +630,16 @@ fn handleGenerate(alloc: std.mem.Allocator, state: *ServerState, request: *std.h
 }
 
 fn handleGetHistory(alloc: std.mem.Allocator, state: *ServerState, request: *std.http.Server.Request) !void {
+    if (!isAdminRequest(state, request)) {
+        try respondJson(request, .forbidden, "{\"ok\":false,\"error\":\"Admin token required\"}");
+        return;
+    }
+
     const records = state.hist.getAll(alloc) catch {
         try respondJson(request, .internal_server_error, "{\"ok\":false,\"error\":\"Failed to load history\"}");
         return;
     };
+    defer freeHistoryRecords(alloc, records);
 
     var resp_buf: std.Io.Writer.Allocating = .init(alloc);
     const w = &resp_buf.writer;
@@ -677,6 +669,11 @@ fn handleGetHistory(alloc: std.mem.Allocator, state: *ServerState, request: *std
 
 fn handleDeleteHistory(alloc: std.mem.Allocator, state: *ServerState, request: *std.http.Server.Request, path: []const u8) !void {
     _ = alloc;
+    if (!isAdminRequest(state, request)) {
+        try respondJson(request, .forbidden, "{\"ok\":false,\"error\":\"Admin token required\"}");
+        return;
+    }
+
     const prefix = "/api/history/";
     if (path.len <= prefix.len) {
         try respondJson(request, .bad_request, "{\"ok\":false,\"error\":\"Missing history ID\"}");
@@ -694,6 +691,11 @@ fn handleDeleteHistory(alloc: std.mem.Allocator, state: *ServerState, request: *
 
 fn handleClearHistory(alloc: std.mem.Allocator, state: *ServerState, request: *std.http.Server.Request) !void {
     _ = alloc;
+    if (!isAdminRequest(state, request)) {
+        try respondJson(request, .forbidden, "{\"ok\":false,\"error\":\"Admin token required\"}");
+        return;
+    }
+
     state.hist.clearAll() catch {
         try respondJson(request, .internal_server_error, "{\"ok\":false,\"error\":\"Failed to clear history\"}");
         return;
@@ -1606,6 +1608,45 @@ fn handleAiTest(alloc: std.mem.Allocator, state: *ServerState, request: *std.htt
 // ═══════════════════════════════════════════════════════════════════
 //  Helpers
 // ═══════════════════════════════════════════════════════════════════
+
+fn isAdminRequest(state: *ServerState, request: *std.http.Server.Request) bool {
+    const expected = std.mem.trim(u8, state.cfg.admin_token, " \t\r\n");
+    if (expected.len == 0) return false;
+
+    var it = request.iterateHeaders();
+    while (it.next()) |header| {
+        if (std.ascii.eqlIgnoreCase(header.name, "x-admin-token") or
+            std.ascii.eqlIgnoreCase(header.name, "x-veiltext-admin-token"))
+        {
+            if (adminTokenMatches(expected, header.value)) return true;
+        }
+
+        if (std.ascii.eqlIgnoreCase(header.name, "authorization")) {
+            const value = std.mem.trim(u8, header.value, " \t\r\n");
+            if (value.len > 7 and std.ascii.eqlIgnoreCase(value[0..7], "Bearer ")) {
+                if (adminTokenMatches(expected, value[7..])) return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+fn adminTokenMatches(expected: []const u8, provided_raw: []const u8) bool {
+    const provided = std.mem.trim(u8, provided_raw, " \t\r\n");
+    return provided.len == expected.len and std.mem.eql(u8, provided, expected);
+}
+
+fn freeHistoryRecords(alloc: std.mem.Allocator, records: []history_mod.HistoryRecord) void {
+    for (records) |record| {
+        alloc.free(record.id);
+        alloc.free(record.timestamp);
+        alloc.free(record.operation);
+        alloc.free(record.pipeline_desc);
+        alloc.free(record.ciphertext_preview);
+    }
+    alloc.free(records);
+}
 
 fn readBody(alloc: std.mem.Allocator, request: *std.http.Server.Request) ![]const u8 {
     var body_buf: [8192]u8 = undefined;

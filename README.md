@@ -15,7 +15,7 @@ VeilText is a self-hosted text encryption, encoding, and generation toolkit buil
 - **Puzzle mode**: split text into transport-safe Base64 pieces and merge them later.
 - **Template generator**: date, random values, UUIDs, word banks, Genshin character data, and custom template chips. See [template reference](docs/TEMPLATES.md).
 - **AI assistant**: OpenAI-compatible and Claude API support, with tool calls for encryption, decryption, generation, puzzle, time, and system info.
-- **Local history**: stores history and template data in `.veiltext-data/.veiltext.db`.
+- **Local history**: the Web UI stores user history in browser `localStorage`; template data remains in `.veiltext-data/.veiltext.db`.
 - **i18n and themes**: English, Chinese, Japanese; Light Jade, Dark Ocean, Sakura, Midnight, Amber, and auto mode.
 - **WebAssembly core**: pure compute wasm module at `zig-out/bin/Wasm/veiltext-core.wasm`.
 
@@ -105,8 +105,8 @@ The HTTP API is documented in [docs/API.md](docs/API.md). Main routes:
 | POST | `/api/puzzle/split` | Split text into pieces |
 | POST | `/api/puzzle/merge` | Merge pieces |
 | POST | `/api/generate` | Generate text from a template |
-| GET/DELETE | `/api/history` | Read or clear history |
-| DELETE | `/api/history/:id` | Delete one history record |
+| GET/DELETE | `/api/history` | Read or clear admin-only backend audit history |
+| DELETE | `/api/history/:id` | Delete one admin-only backend audit record |
 | GET/PUT/DELETE | `/api/template-data` | Read, update, or reset template data |
 | PUT | `/api/settings` | Update AI settings |
 | POST | `/api/ai/chat` | AI assistant |
@@ -166,7 +166,7 @@ src/
 
 - The server binds to `127.0.0.1` by default. Use `--bind 0.0.0.0` only when you intend to expose it beyond localhost.
 - TLS is not built in. Put VeilText behind a reverse proxy for public deployments.
-- History stores operation metadata and ciphertext previews. Clear history when handling sensitive material.
+- Web UI history stores operation metadata and ciphertext previews in browser `localStorage`. Backend history APIs are retained for admin-only audit access; configure `--admin-token` or `VEILTEXT_ADMIN_TOKEN` before using them.
 - Hash steps are one-way and cannot be decrypted.
 
 ## Thanks

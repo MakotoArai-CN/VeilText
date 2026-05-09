@@ -180,11 +180,15 @@ Template variables are documented in [TEMPLATES.md](TEMPLATES.md).
 
 ## History
 
+These audit endpoints are admin-only. Configure an admin token with
+`--admin-token <token>` or `VEILTEXT_ADMIN_TOKEN`, then send it as
+`X-Admin-Token: <token>` or `Authorization: Bearer <token>`.
+
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/api/history` | List history records |
-| DELETE | `/api/history` | Clear all history |
-| DELETE | `/api/history/:id` | Delete one record |
+| GET | `/api/history` | List backend audit history records |
+| DELETE | `/api/history` | Clear backend audit history |
+| DELETE | `/api/history/:id` | Delete one backend audit record |
 
 ## Template Data
 

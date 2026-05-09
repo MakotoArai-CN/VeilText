@@ -907,6 +907,40 @@ fn expectSingleStepRoundTrip(allocator: std.mem.Allocator, step: PipelineStep, p
     try std.testing.expectEqualStrings(plaintext, decoded.ciphertext);
 }
 
+fn expectSmartDecodeWithSelectedStep(allocator: std.mem.Allocator, step: PipelineStep, plaintext: []const u8) !void {
+    const steps = [_]PipelineStep{step};
+    const encoded = try executePipeline(allocator, plaintext, &steps);
+    defer allocator.free(encoded.ciphertext);
+    defer allocator.free(encoded.description);
+
+    const decoded = try autoDecode(allocator, encoded.ciphertext, &steps, .{
+        .key = step.key,
+        .max_depth = 4,
+    });
+    defer decoded.deinit(allocator);
+
+    try std.testing.expectEqualStrings(plaintext, decoded.plaintext);
+    try std.testing.expectEqual(@as(usize, 1), decoded.steps.len);
+    try std.testing.expectEqual(step.step_type, decoded.steps[0]);
+}
+
+fn expectSmartAutoDecodeSingleStep(allocator: std.mem.Allocator, step: PipelineStep, plaintext: []const u8) !void {
+    const steps = [_]PipelineStep{step};
+    const encoded = try executePipeline(allocator, plaintext, &steps);
+    defer allocator.free(encoded.ciphertext);
+    defer allocator.free(encoded.description);
+
+    const decoded = try autoDecode(allocator, encoded.ciphertext, &[_]PipelineStep{}, .{
+        .key = step.key,
+        .max_depth = 4,
+    });
+    defer decoded.deinit(allocator);
+
+    try std.testing.expectEqualStrings(plaintext, decoded.plaintext);
+    try std.testing.expect(decoded.steps.len >= 1);
+    try std.testing.expectEqual(step.step_type, decoded.steps[0]);
+}
+
 test "all reversible single-step algorithms round-trip" {
     const allocator = std.testing.allocator;
 
@@ -951,5 +985,63 @@ test "all reversible single-step algorithms round-trip" {
                 .key = "test-key-123",
             }, sample);
         }
+    }
+}
+
+test "AI decode with selected step handles all reversible single-step algorithms" {
+    const allocator = std.testing.allocator;
+
+    const no_key_steps = [_]StepType{
+        .base16,
+        .base32,
+        .base58,
+        .base64,
+        .base85,
+        .js_hex_escape,
+        .js_unicode_escape,
+        .js_binary_string,
+        .js_jjencode,
+        .js_aaencode,
+        .js_jsfuck,
+        .js_eval_wrap,
+        .js_constructor_wrap,
+        .js_base36_tostring,
+        .bf_text,
+        .bf_emoji,
+    };
+
+    for (no_key_steps) |step_type| {
+        try expectSmartDecodeWithSelectedStep(allocator, .{ .step_type = step_type }, "AI decode selected step");
+    }
+
+    const key_steps = [_]StepType{
+        .aes_256_gcm,
+        .chacha20_poly1305,
+        .xchacha20_poly1305,
+        .aes_256_cbc,
+    };
+
+    for (key_steps) |step_type| {
+        try expectSmartDecodeWithSelectedStep(allocator, .{
+            .step_type = step_type,
+            .key = "test-key-123",
+        }, "AI decode selected step");
+    }
+}
+
+test "AI auto decode detects all symmetric encryption algorithms" {
+    const allocator = std.testing.allocator;
+    const key_steps = [_]StepType{
+        .aes_256_gcm,
+        .chacha20_poly1305,
+        .xchacha20_poly1305,
+        .aes_256_cbc,
+    };
+
+    for (key_steps) |step_type| {
+        try expectSmartAutoDecodeSingleStep(allocator, .{
+            .step_type = step_type,
+            .key = "test-key-123",
+        }, "AI auto decrypts symmetric algorithms");
     }
 }

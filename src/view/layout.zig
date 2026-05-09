@@ -735,20 +735,22 @@ const app_js =
     \\function doEncrypt(){
     \\  var txt=$('encrypt-input').value;if(!txt){toast('Please enter text','error');return}
     \\  var key=$('encrypt-key').value;
-    \\  var steps=ePipeline.length>0?ePipeline:['base64'];
+    \\  var steps=ePipeline.length>0?ePipeline:[getSelVal('algo-select')||'base64'];
     \\  if(needsKey(steps)&&!key){toast('Key required for this algorithm','error');return}
     \\  var body={text:txt,pipeline:buildSteps(steps,key)};
     \\  fetch('/api/encrypt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
     \\  .then(function(r){return r.json()}).then(function(d){
     \\    if(d.error){toast(d.error,'error');return}
-    \\    $('encrypt-result').textContent=d.ciphertext||d.result||'';
+    \\    var out=d.ciphertext||d.result||'';
+    \\    $('encrypt-result').textContent=out;
     \\    $('encrypt-result-card').style.display='';toast('Encrypted!','success');
+    \\    addLocalHistory({operation:'encrypt',pipeline_desc:d.pipeline_desc||steps.join(' -> '),ciphertext_preview:out,plaintext_hash:d.plaintext_hash||''});
     \\  }).catch(function(e){toast('Error: '+e.message,'error')});
     \\}
     \\function doDecrypt(){
     \\  var txt=$('decrypt-input').value;if(!txt){toast('Please enter ciphertext','error');return}
     \\  var key=$('decrypt-key').value;var hash=$('decrypt-hash').value;
-    \\  var steps=dPipeline.length>0?dPipeline:['base64'];
+    \\  var steps=dPipeline.length>0?dPipeline:[getSelVal('dalgo-select')||'base64'];
     \\  if(needsKey(steps)&&!key){toast('Key required','error');return}
     \\  var body={text:txt,pipeline:buildSteps(steps,key)};
     \\  if(hash)body.expected_hash=hash;
@@ -763,6 +765,7 @@ const app_js =
     \\    else if(d.hash_match===false){v.textContent='\u2717 Hash mismatch';v.style.color='var(--error)'}
     \\    else{v.textContent=''}
     \\    toast('Decrypted!','success');
+    \\    addLocalHistory({operation:'decrypt',pipeline_desc:d.pipeline_desc||steps.join(' -> '),ciphertext_preview:txt});
     \\  }).catch(function(e){toast('Error: '+e.message,'error')});
     \\}
     \\function doSmartDecode(){
@@ -784,6 +787,7 @@ const app_js =
     \\    detail.textContent='AI path: '+(d.pipeline_desc||stepsText)+' | attempts: '+(d.attempts||0)+(d.still_encoded?' | still looks encoded/encrypted':'');
     \\    detail.style.display='';
     \\    toast('AI decoded','success');
+    \\    addLocalHistory({operation:'decrypt',pipeline_desc:d.pipeline_desc||stepsText,ciphertext_preview:txt});
     \\  }).catch(function(e){toast('Error: '+e.message,'error')})
     \\  .finally(function(){if(btn){btn.disabled=false;btn.textContent=old}});
     \\}
@@ -1065,35 +1069,69 @@ const app_js =
     \\  if(navigator.clipboard){navigator.clipboard.writeText(t).then(function(){toast('Copied!','success')})}
     \\  else{var a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();document.execCommand('copy');document.body.removeChild(a);toast('Copied!','success')}
     \\}
+    \\var HISTORY_KEY='vt-history';
+    \\function historyNow(){
+    \\  var d=new Date();var p=function(n){return String(n).padStart(2,'0')};
+    \\  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());
+    \\}
+    \\function readLocalHistory(){
+    \\  try{
+    \\    var raw=localStorage.getItem(HISTORY_KEY);
+    \\    var items=raw?JSON.parse(raw):[];
+    \\    return Array.isArray(items)?items:[];
+    \\  }catch(e){return []}
+    \\}
+    \\function writeLocalHistory(items){
+    \\  try{localStorage.setItem(HISTORY_KEY,JSON.stringify(items.slice(0,1000)))}catch(e){}
+    \\}
+    \\function addLocalHistory(record){
+    \\  var items=readLocalHistory();
+    \\  var preview=record.ciphertext_preview||'';
+    \\  if(preview.length>512)preview=preview.substring(0,512);
+    \\  items.unshift({
+    \\    id:'h'+Date.now().toString(36)+Math.random().toString(36).slice(2,8),
+    \\    timestamp:historyNow(),
+    \\    operation:record.operation||'operation',
+    \\    pipeline_desc:record.pipeline_desc||'',
+    \\    plaintext_hash:record.plaintext_hash||'',
+    \\    ciphertext_preview:preview
+    \\  });
+    \\  writeLocalHistory(items);
+    \\}
+    \\function emptyHistory(el){
+    \\  el.innerHTML='<p style="color:var(--text-muted);font-size:14px">No history yet</p>';
+    \\}
     \\function loadHistory(){
-    \\  fetch('/api/history').then(function(r){return r.json()}).then(function(d){
-    \\    var el=$('history-list');
-    \\    if(!d.records||d.records.length===0){el.innerHTML='<p style="color:var(--text-muted);font-size:14px">No history yet</p>';return}
-    \\    el.innerHTML='';
-    \\    for(var i=0;i<d.records.length;i++){
-    \\      var r=d.records[i];var div=document.createElement('div');div.className='hist-item';
-    \\      var ct=r.ciphertext_preview||'';
-    \\      div.innerHTML='<div class="hist-row">'+
-    \\        '<div class="hist-main">'+
-    \\        '<div class="hist-meta"><strong>'+r.operation+'</strong>'+
-    \\        '<span class="hist-time">'+r.timestamp+'</span>'+
-    \\        '<span class="hist-pipe">'+(r.pipeline_desc||'')+'</span></div>'+
-    \\        '<code class="hist-code">'+ct+'</code>'+
-    \\        '</div>'+
-    \\        '<div class="hist-actions">'+
-    \\        '<button class="hist-btn" onclick="(function(b){copyText(b.closest(\'.hist-item\').querySelector(\'code\').textContent,b)})(this)">Copy</button>'+
-    \\        '<button class="hist-btn hist-btn-danger" onclick="deleteHist(\''+r.id+'\')">Delete</button>'+
-    \\        '</div></div>';
-    \\      el.appendChild(div);
-    \\    }
-    \\  }).catch(function(){});
+    \\  var el=$('history-list');var records=readLocalHistory();
+    \\  if(!records.length){emptyHistory(el);return}
+    \\  el.innerHTML='';
+    \\  for(var i=0;i<records.length;i++){
+    \\    var r=records[i];var div=document.createElement('div');div.className='hist-item';
+    \\    var row=document.createElement('div');row.className='hist-row';
+    \\    var main=document.createElement('div');main.className='hist-main';
+    \\    var meta=document.createElement('div');meta.className='hist-meta';
+    \\    var op=document.createElement('strong');op.textContent=r.operation||'operation';
+    \\    var time=document.createElement('span');time.className='hist-time';time.textContent=r.timestamp||'';
+    \\    var pipe=document.createElement('span');pipe.className='hist-pipe';pipe.textContent=r.pipeline_desc||'';
+    \\    var code=document.createElement('code');code.className='hist-code';code.textContent=r.ciphertext_preview||'';
+    \\    var actions=document.createElement('div');actions.className='hist-actions';
+    \\    var copyBtn=document.createElement('button');copyBtn.className='hist-btn';copyBtn.textContent='Copy';
+    \\    copyBtn.onclick=(function(c,b){return function(){copyText(c.textContent,b)}})(code,copyBtn);
+    \\    var delBtn=document.createElement('button');delBtn.className='hist-btn hist-btn-danger';delBtn.textContent='Delete';
+    \\    delBtn.onclick=(function(id){return function(){deleteHist(id)}})(r.id);
+    \\    meta.appendChild(op);meta.appendChild(time);meta.appendChild(pipe);
+    \\    main.appendChild(meta);main.appendChild(code);
+    \\    actions.appendChild(copyBtn);actions.appendChild(delBtn);
+    \\    row.appendChild(main);row.appendChild(actions);div.appendChild(row);el.appendChild(div);
+    \\  }
     \\}
     \\function deleteHist(id){
-    \\  fetch('/api/history/'+id,{method:'DELETE'}).then(function(){loadHistory();toast('Deleted','success')}).catch(function(){});
+    \\  var items=readLocalHistory().filter(function(r){return r.id!==id});
+    \\  writeLocalHistory(items);loadHistory();toast('Deleted','success');
     \\}
     \\function clearHist(){
     \\  if(!confirm('Clear all history?'))return;
-    \\  fetch('/api/history',{method:'DELETE'}).then(function(){loadHistory();toast('Cleared','success')}).catch(function(){});
+    \\  writeLocalHistory([]);loadHistory();toast('Cleared','success');
     \\}
     \\function setTheme(t){
     \\  localStorage.setItem('vt-theme',t);
